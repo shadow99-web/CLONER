@@ -1,4 +1,5 @@
 import discord
+from discord import Intents
 import asyncio
 import os
 import sys
@@ -166,7 +167,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
     logger.info("\n🎉 CLONING COMPLETED!")
 
 # ─── MAIN BOOT ───
-async def main():
+async def main_boot():
     keep_alive()
     logger.info("🚀 SYSTEM BOOT: DIRECT CONNECTION MODE")
 
@@ -174,50 +175,54 @@ async def main():
         logger.error("❌ TOKEN1 not set!")
         return
 
+    # Set up intents – critical for self-bots to receive guild data
+    intents = Intents.default()
+    intents.guilds = True
+    intents.members = True
+    intents.message_content = True
+
     client = discord.Client(
+        intents=intents,
         self_bot=True,
         browser="chrome",
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         compress=False
     )
 
+    # Optional: on_ready for logging
     @client.event
     async def on_ready():
-        logger.info(f"✨ on_ready fired: {client.user}")
+        logger.info(f"✨ [ON_READY] Authenticated as: {client.user}")
 
-    # Start client in background (same as P2AURAFARMER)
-    asyncio.create_task(client.start(ACCOUNT_TOKEN.strip()))
+    # Start client
+    await client.start(ACCOUNT_TOKEN.strip())
 
-    # Wait for client to authenticate
-    logger.info("⏳ Waiting for client to authenticate...")
-    while client.user is None:
-        await asyncio.sleep(0.5)
+    # Wait until the client is fully ready (gateway connected, guilds populated)
+    await client.wait_until_ready()
+    logger.info("✅ Client is ready.")
 
-    logger.info(f"✨ Authenticated as: {client.user}")
+    # Fetch guilds
+    source = client.get_guild(SOURCE_SERVER_ID)
+    target = client.get_guild(TARGET_SERVER_ID)
 
-    # Wait for guild cache
-    logger.info("⏳ Waiting for guild cache to populate...")
-    for attempt in range(1, 13):
-        await asyncio.sleep(5)
-        source = client.get_guild(SOURCE_SERVER_ID)
-        target = client.get_guild(TARGET_SERVER_ID)
-        logger.info(f"Attempt {attempt}/12 – Source: {source is not None}, Target: {target is not None}")
-        if source and target:
-            logger.info("✅ Both guilds found!")
-            await start_cloning_engine(client, source, target)
-            break
-    else:
-        logger.error("❌ Guilds not found after 60 seconds.")
-        logger.error(f"📋 Guilds in cache: {[g.id for g in client.guilds]}")
+    if not source:
+        logger.error(f"❌ Source server [{SOURCE_SERVER_ID}] not found.")
+        logger.info(f"📋 All guilds in cache: {[g.id for g in client.guilds]}")
+        return
+    if not target:
+        logger.error(f"❌ Target server [{TARGET_SERVER_ID}] not found.")
+        logger.info(f"📋 All guilds in cache: {[g.id for g in client.guilds]}")
+        return
 
-    # Keep the bot running (like P2AURAFARMER)
-    logger.info("🔄 Keeping bot alive...")
+    await start_cloning_engine(client, source, target)
+
+    # Keep alive
     while True:
         await asyncio.sleep(3600)
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        asyncio.run(main_boot())
     except KeyboardInterrupt:
         logger.info("Stopping Cloner...")
     except Exception as e:
