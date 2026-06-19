@@ -262,19 +262,25 @@ async def main_boot():
     async def on_ready():
         logger.info(f"✨ [ON_READY] Authenticated as: {client.user}")
 
+    # Start client in background
     asyncio.create_task(client.start(ACCOUNT_TOKEN.strip()))
 
-    # Wait for the client to be ready (with timeout)
-    logger.info("⏳ Waiting for client to be ready...")
-    try:
-        await asyncio.wait_for(client.wait_until_ready(), timeout=30)
-        logger.info("✅ Client is ready!")
-    except asyncio.TimeoutError:
-        logger.error("❌ Client did not become ready within 30 seconds. Exiting.")
+    # Wait for authentication by polling client.user
+    logger.info("⏳ Waiting for client to authenticate...")
+    auth_attempts = 0
+    while client.user is None and auth_attempts < 30:
+        await asyncio.sleep(1)
+        auth_attempts += 1
+
+    if client.user is None:
+        logger.error("❌ Authentication failed after 30 seconds.")
         return
 
-    # Wait a bit for guild cache to populate (not strictly needed since we use fetch, but helpful)
-    await asyncio.sleep(3)
+    logger.info(f"✨ Authenticated as: {client.user}")
+
+    # Wait for connection to stabilize
+    logger.info("⏳ Waiting 10s for connection to stabilize...")
+    await asyncio.sleep(10)
 
     logger.info("⏳ Fetching guilds directly from Discord API...")
     try:
@@ -293,6 +299,7 @@ async def main_boot():
     except Exception as e:
         logger.error(f"❌ Error fetching guilds: {e}")
 
+    # Keep alive
     while True:
         await asyncio.sleep(3600)
 
