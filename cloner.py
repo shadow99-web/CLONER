@@ -1,5 +1,4 @@
 import discord
-from discord import Intents
 import asyncio
 import os
 import sys
@@ -175,21 +174,13 @@ async def main_boot():
         logger.error("❌ TOKEN1 not set!")
         return
 
-    # Set up intents – critical for self-bots to receive guild data
-    intents = Intents.default()
-    intents.guilds = True
-    intents.members = True
-    intents.message_content = True
-
     client = discord.Client(
-        intents=intents,
         self_bot=True,
         browser="chrome",
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         compress=False
     )
 
-    # Optional: on_ready for logging
     @client.event
     async def on_ready():
         logger.info(f"✨ [ON_READY] Authenticated as: {client.user}")
@@ -197,21 +188,24 @@ async def main_boot():
     # Start client
     await client.start(ACCOUNT_TOKEN.strip())
 
-    # Wait until the client is fully ready (gateway connected, guilds populated)
+    # Wait for the client to be ready (gateway connection established)
     await client.wait_until_ready()
     logger.info("✅ Client is ready.")
 
-    # Fetch guilds
-    source = client.get_guild(SOURCE_SERVER_ID)
-    target = client.get_guild(TARGET_SERVER_ID)
+    # Poll for guilds until they appear (max 30 attempts, 2s apart = 60s)
+    source = target = None
+    for attempt in range(1, 31):
+        source = client.get_guild(SOURCE_SERVER_ID)
+        target = client.get_guild(TARGET_SERVER_ID)
+        if source and target:
+            logger.info(f"✅ Found both guilds after {attempt*2}s.")
+            break
+        logger.info(f"Attempt {attempt}/30 – Source: {source is not None}, Target: {target is not None}")
+        await asyncio.sleep(2)
 
-    if not source:
-        logger.error(f"❌ Source server [{SOURCE_SERVER_ID}] not found.")
-        logger.info(f"📋 All guilds in cache: {[g.id for g in client.guilds]}")
-        return
-    if not target:
-        logger.error(f"❌ Target server [{TARGET_SERVER_ID}] not found.")
-        logger.info(f"📋 All guilds in cache: {[g.id for g in client.guilds]}")
+    if not source or not target:
+        logger.error("❌ Guilds not found after 60 seconds.")
+        logger.error(f"📋 Guilds in cache: {[g.id for g in client.guilds]}")
         return
 
     await start_cloning_engine(client, source, target)
