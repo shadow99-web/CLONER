@@ -3,6 +3,22 @@ import asyncio
 import os
 import sys
 
+# ───────────────────────────────────────────────────────────────────
+# 🔥 CRITICAL GATEWAY PATCH: FIXES 'NoneType' OBJECT IS NOT ITERABLE
+# ───────────────────────────────────────────────────────────────────
+from discord.state import ConnectionState
+
+def patched_parse_ready_supplemental(self, data):
+    try:
+        self.pending_payments = {
+            int(p['id']): p for p in data.get('pending_payments') or []
+        }
+    except Exception:
+        self.pending_payments = {}
+
+ConnectionState.parse_ready_supplemental = patched_parse_ready_supplemental
+# ───────────────────────────────────────────────────────────────────
+
 # =======================================================================
 # ⚙️ CONFIGURATION BOUNDARY
 # =======================================================================
@@ -19,7 +35,8 @@ TARGET_SERVER_ID = 1517588614459031723
 cloner_client = discord.Client(
     self_bot=True,
     browser="chrome",
-    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    compress=False
 )
 
 async def start_cloning_engine():
