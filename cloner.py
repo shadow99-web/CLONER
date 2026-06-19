@@ -56,22 +56,32 @@ cloner_client = discord.Client(
 )
 
 async def start_cloning_engine():
-    print("⏳ [STAGE 1] Syncing Discord cache... Waiting 15 seconds...", flush=True)
-    await asyncio.sleep(15)
+    print("\n⚡ [STAGE 1] Gateway handshake confirmed! Entering dynamic cache warmup...", flush=True)
     
-    print(f"📡 Current visible guild count in memory: {len(cloner_client.guilds)}", flush=True)
-    print(f"📋 Full list of IDs this token can access: {[g.id for g in cloner_client.guilds]}", flush=True)
-
-    source_guild = cloner_client.get_guild(SOURCE_SERVER_ID)
-    target_guild = cloner_client.get_guild(TARGET_SERVER_ID)
-
-    if not source_guild:
-        print(f"❌ [CACHE DEFICIT] Unable to find SOURCE server [{SOURCE_SERVER_ID}]. Is the account actively inside that server?", flush=True)
-    if not target_guild:
-        print(f"❌ [CACHE DEFICIT] Unable to find TARGET server [{TARGET_SERVER_ID}]. Is the account actively inside that server?", flush=True)
-
+    source_guild = None
+    target_guild = None
+    
+    # Give the gateway up to 45 seconds to stream guilds into client memory
+    for attempt in range(1, 10):
+        await asyncio.sleep(5)
+        
+        # Pull fresh counts directly from library collections
+        current_guilds = cloner_client.guilds
+        print(f"📡 Cache Progress: {len(current_guilds)} servers currently indexed in memory...", flush=True)
+        
+        source_guild = cloner_client.get_guild(SOURCE_SERVER_ID)
+        target_guild = cloner_client.get_guild(TARGET_SERVER_ID)
+        
+        if source_guild and target_guild:
+            break
+            
     if not source_guild or not target_guild:
-        print("🛑 System halted due to missing server references. Verify your account presence and Server IDs.", flush=True)
+        print("\n" + "!"*60)
+        print("❌ CRITICAL CACHE TIMEOUT: REFUSING TO COOPERATE")
+        print(f"👉 Target looked for SOURCE: {SOURCE_SERVER_ID} -> Discovered: {'FOUND' if source_guild else 'MISSING'}")
+        print(f"👉 Target looked for TARGET: {TARGET_SERVER_ID} -> Discovered: {'FOUND' if target_guild else 'MISSING'}")
+        print(f"📋 Raw list of every ID your token can physically see right now:\n{[g.id for g in cloner_client.guilds]}")
+        print("!"*60 + "\n", flush=True)
         return
 
     print("\n" + "="*50)
@@ -231,9 +241,9 @@ async def start_cloning_engine():
     print("="*50 + "\n", flush=True)
 
 @cloner_client.event
-async def on_ready():
-    print(f"✨ Authenticated successfully as: {cloner_client.user}", flush=True)
-    # Trigger the task and handle potential errors safely
+async def on_connect():
+    print("✨ Account established visual pipeline connection with Discord gateway!", flush=True)
+    # Fire the cloning tracking engine instantly upon connection handshake
     cloner_client.loop.create_task(start_cloning_engine())
 
 if __name__ == "__main__":
@@ -247,3 +257,4 @@ if __name__ == "__main__":
         cloner_client.run(ACCOUNT_TOKEN)
     except Exception as e:
         print(f"🛑 Execution Terminated: {e}", flush=True)
+                
