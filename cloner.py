@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("ClonerEngine")
 
 # ─── GATEWAY PATCH ───
+# This patch is still recommended for self-bots to avoid certain errors.
 from discord.state import ConnectionState
 def patched_parse_ready_supplemental(self, data):
     try:
@@ -39,18 +40,17 @@ def keep_alive():
     Thread(target=run, daemon=True).start()
 
 # ─── CLIENT ───
-cloner_client = discord.Client(
-    self_bot=True,
-    browser="chrome",
-    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    compress=False
-)
+# The key difference is using discord.Client with the self_bot=True flag.
+intents = discord.Intents.default()
+intents.message_content = True
 
-# ─── WAIT FOR GUILDS (RELIABLE) ───
+cloner_client = discord.Client(intents=intents, self_bot=True)
+
+# ─── WAIT FOR GUILDS ───
 async def wait_for_guilds():
     """Keep checking until both guilds are in the cache."""
     logger.info("⏳ Waiting for guild cache to populate...")
-    for attempt in range(1, 13):  # 12 attempts × 5s = 60 seconds
+    for attempt in range(1, 13):
         await asyncio.sleep(5)
         source = cloner_client.get_guild(SOURCE_SERVER_ID)
         target = cloner_client.get_guild(TARGET_SERVER_ID)
@@ -190,15 +190,17 @@ async def start_cloning_engine():
 
     logger.info("\n🎉 CLONING COMPLETED!")
 
-# ─── MAIN ───
-async def main():
-    await cloner_client.login(ACCOUNT_TOKEN)
-    await cloner_client.connect()
+# ─── EVENT HANDLERS ───
+@cloner_client.event
+async def on_ready():
+    logger.info(f"✨ Authenticated as: {cloner_client.user}")
+    # Start cloning once the client is ready.
     await start_cloning_engine()
 
+# ─── BOOT ───
 if __name__ == "__main__":
     if not ACCOUNT_TOKEN:
         logger.error("❌ TOKEN1 not set.")
         sys.exit(1)
     keep_alive()
-    asyncio.run(main())
+    cloner_client.run(ACCOUNT_TOKEN)
