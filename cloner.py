@@ -37,7 +37,6 @@ def home():
     return "Cloning Engine is active and healthy!"
 
 def run():
-    # Render binds to port 10000 or uses PORT environment variable
     port = int(os.environ.get("PORT", 10000))
     try:
         app.run(host='0.0.0.0', port=port)
@@ -57,27 +56,22 @@ cloner_client = discord.Client(
 )
 
 async def start_cloning_engine():
-    print("⏳ Waiting for Discord cache to synchronize streams fully...", flush=True)
+    print("⏳ [STAGE 1] Syncing Discord cache... Waiting 15 seconds...", flush=True)
+    await asyncio.sleep(15)
     
-    # Dynamic loop to wait until the guilds are populated in cache
-    source_guild = None
-    target_guild = None
-    
-    for attempt in range(1, 7): # Try for up to 30 seconds
-        await asyncio.sleep(5)
-        source_guild = cloner_client.get_guild(SOURCE_SERVER_ID)
-        target_guild = cloner_client.get_guild(TARGET_SERVER_ID)
-        
-        if source_guild and target_guild:
-            break
-        print(f" 🔄 Cache sync attempt {attempt}/6: Still loading guilds...", flush=True)
+    print(f"📡 Current visible guild count in memory: {len(cloner_client.guilds)}", flush=True)
+    print(f"📋 Full list of IDs this token can access: {[g.id for g in cloner_client.guilds]}", flush=True)
+
+    source_guild = cloner_client.get_guild(SOURCE_SERVER_ID)
+    target_guild = cloner_client.get_guild(TARGET_SERVER_ID)
 
     if not source_guild:
-        print(f"❌ Critical Error: Unable to locate source server [{SOURCE_SERVER_ID}] in cache after waiting.", flush=True)
-        print(f"👉 Available servers your token can see: {[g.id for g in cloner_client.guilds]}", flush=True)
-        return
+        print(f"❌ [CACHE DEFICIT] Unable to find SOURCE server [{SOURCE_SERVER_ID}]. Is the account actively inside that server?", flush=True)
     if not target_guild:
-        print(f"❌ Critical Error: Unable to locate destination server [{TARGET_SERVER_ID}] in cache after waiting.", flush=True)
+        print(f"❌ [CACHE DEFICIT] Unable to find TARGET server [{TARGET_SERVER_ID}]. Is the account actively inside that server?", flush=True)
+
+    if not source_guild or not target_guild:
+        print("🛑 System halted due to missing server references. Verify your account presence and Server IDs.", flush=True)
         return
 
     print("\n" + "="*50)
@@ -239,6 +233,7 @@ async def start_cloning_engine():
 @cloner_client.event
 async def on_ready():
     print(f"✨ Authenticated successfully as: {cloner_client.user}", flush=True)
+    # Trigger the task and handle potential errors safely
     cloner_client.loop.create_task(start_cloning_engine())
 
 if __name__ == "__main__":
