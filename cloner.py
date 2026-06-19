@@ -155,7 +155,6 @@ async def start_cloning_engine():
             except Exception as e:
                 print(f"  ├── ⚠️ Skipped Voice Channel [{vc_chan.name}]: {e}")
 
-
     # ───────────────────────────────────────────────────────────────────
     # STEP 4: DOWNLOADING & UPLOADING EMOTES PIPELINE
     # ───────────────────────────────────────────────────────────────────
@@ -164,7 +163,6 @@ async def start_cloning_engine():
     if not source_guild.emojis:
         print(" ℹ️ No custom emojis discovered on the source server.")
     else:
-        # Check current tier layout capabilities of destination guild
         max_emojis = target_guild.emoji_limit
         current_emojis = len(target_guild.emojis)
         slots_available = max_emojis - current_emojis
@@ -178,18 +176,13 @@ async def start_cloning_engine():
                 break
                 
             try:
-                # Read the asset's binary payload data
                 emoji_bytes = await emoji.read()
-                
-                # Re-upload asset stream onto your destination dashboard
                 await target_guild.create_custom_emoji(
                     name=emoji.name,
                     image=emoji_bytes
                 )
                 emoji_count += 1
                 print(f"  ├── ✨ Synced Emoji: :{emoji.name}: ({emoji_count})")
-                
-                # Emojis hit harsh rate limits. Pause to keep account profile operations safe.
                 await asyncio.sleep(2.0)
             except Exception as e:
                 print(f"  ├── ⚠️ Failed to mirror emoji :{emoji.name}: -> {e}")
@@ -197,77 +190,6 @@ async def start_cloning_engine():
 
     print("\n" + "="*50)
     print("🎉 DEPLOYMENT SUCCESSFUL! Structural layout and emoji banks mirrored completely.")
-    print("="*50 + "\n")
-    await cloner_client.close()
-
-@cloner_client.event
-async def on_ready():
-    print(f"✨ Authenticated successfully as: {cloner_client.user}")
-    cloner_client.loop.create_task(start_cloning_engine())
-
-if __name__ == "__main__":
-    if not ACCOUNT_TOKEN or ACCOUNT_TOKEN == "None":
-        print("❌ Error: ACCOUNT_TOKEN variable is completely empty inside cloner.py!")
-        sys.exit()
-    try:
-        cloner_client.run(ACCOUNT_TOKEN)
-    except Exception as e:
-        print(f"🛑 Execution Terminated: {e}")
-                overwrites=cat_overwrites
-            )
-            print(f"📂 Category Built: {category.name}")
-            await asyncio.sleep(1.0)
-        except Exception as e:
-            print(f" ❌ Skipping Category [{category.name}] due to failure: {e}")
-            continue
-
-        # Compile text channels nested inside this category
-        for txt_chan in category.text_channels:
-            chan_overwrites = {}
-            for role_or_member, overwrite in txt_chan.overwrites.items():
-                if isinstance(role_or_member, discord.Role):
-                    mapped_role = role_mapping.get(role_or_member.id)
-                    if mapped_role:
-                        chan_overwrites[mapped_role] = overwrite
-
-            try:
-                await target_guild.create_text_channel(
-                    name=txt_chan.name,
-                    category=new_category,
-                    topic=txt_chan.topic,
-                    nsfw=txt_chan.nsfw,
-                    slowmode_delay=txt_chan.slowmode_delay,
-                    overwrites=chan_overwrites
-                )
-                print(f"  ├── 📝 Text Channel: {txt_chan.name}")
-                await asyncio.sleep(1.2)  # Strict delay to prevent channel rate-limiting spikes
-            except Exception as e:
-                print(f"  ├── ⚠️ Skipped Text Channel [{txt_chan.name}]: {e}")
-
-        # Compile voice channels nested inside this category
-        for vc_chan in category.voice_channels:
-            chan_overwrites = {}
-            for role_or_member, overwrite in vc_chan.overwrites.items():
-                if isinstance(role_or_member, discord.Role):
-                    mapped_role = role_mapping.get(role_or_member.id)
-                    if mapped_role:
-                        chan_overwrites[mapped_role] = overwrite
-
-            try:
-                await target_guild.create_voice_channel(
-                    name=vc_chan.name,
-                    category=new_category,
-                    user_limit=vc_chan.user_limit,
-                    bitrate=max(8000, min(vc_chan.bitrate, 96000)),
-                    overwrites=chan_overwrites
-                )
-                print(f"  ├── 🔊 Voice Channel: {vc_chan.name}")
-                await asyncio.sleep(1.2)
-            except Exception as e:
-                print(f"  ├── ⚠️ Skipped Voice Channel [{vc_chan.name}]: {e}")
-
-    print("\n" + "="*50)
-    print("🎉 DEPLOYMENT SUCCESSFUL! Structural layout mirrored completely.")
     print("="*50 + "\n")
     await cloner_client.close()
 
