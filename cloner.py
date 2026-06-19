@@ -37,11 +37,12 @@ def home():
     return "Cloning Engine is active and healthy!"
 
 def run():
-    port = int(os.environ.get("PORT", 7860))
+    # Render binds to port 10000 or uses PORT environment variable
+    port = int(os.environ.get("PORT", 10000))
     try:
         app.run(host='0.0.0.0', port=port)
     except Exception as e:
-        print(f"⚠️ Flask Server suppressed: {e}")
+        print(f"⚠️ Flask Server suppressed: {e}", flush=True)
 
 def keep_alive():
     t = Thread(target=run, daemon=True)
@@ -56,17 +57,27 @@ cloner_client = discord.Client(
 )
 
 async def start_cloning_engine():
-    # Allow the client cache a moment to synchronize structures fully
-    await asyncio.sleep(5)
+    print("⏳ Waiting for Discord cache to synchronize streams fully...", flush=True)
     
-    source_guild = cloner_client.get_guild(SOURCE_SERVER_ID)
-    target_guild = cloner_client.get_guild(TARGET_SERVER_ID)
+    # Dynamic loop to wait until the guilds are populated in cache
+    source_guild = None
+    target_guild = None
+    
+    for attempt in range(1, 7): # Try for up to 30 seconds
+        await asyncio.sleep(5)
+        source_guild = cloner_client.get_guild(SOURCE_SERVER_ID)
+        target_guild = cloner_client.get_guild(TARGET_SERVER_ID)
+        
+        if source_guild and target_guild:
+            break
+        print(f" 🔄 Cache sync attempt {attempt}/6: Still loading guilds...", flush=True)
 
     if not source_guild:
-        print(f"❌ Critical Error: Unable to locate source server [{SOURCE_SERVER_ID}]. Am I in it?")
+        print(f"❌ Critical Error: Unable to locate source server [{SOURCE_SERVER_ID}] in cache after waiting.", flush=True)
+        print(f"👉 Available servers your token can see: {[g.id for g in cloner_client.guilds]}", flush=True)
         return
     if not target_guild:
-        print(f"❌ Critical Error: Unable to locate destination server [{TARGET_SERVER_ID}]. Am I an Admin there?")
+        print(f"❌ Critical Error: Unable to locate destination server [{TARGET_SERVER_ID}] in cache after waiting.", flush=True)
         return
 
     print("\n" + "="*50)
@@ -232,13 +243,12 @@ async def on_ready():
 
 if __name__ == "__main__":
     if not ACCOUNT_TOKEN or ACCOUNT_TOKEN == "None":
-        print("❌ Error: ACCOUNT_TOKEN variable is completely empty inside cloner.py!")
+        print("❌ Error: ACCOUNT_TOKEN variable is completely empty inside cloner.py!", flush=True)
         sys.exit()
         
-    # Start the web server context right before spinning up the client
     keep_alive()
     
     try:
         cloner_client.run(ACCOUNT_TOKEN)
     except Exception as e:
-        print(f"🛑 Execution Terminated: {e}")
+        print(f"🛑 Execution Terminated: {e}", flush=True)
