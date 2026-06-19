@@ -10,7 +10,7 @@ from threading import Thread
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s', stream=sys.stdout)
 logger = logging.getLogger("ClonerEngine")
 
-# ─── GATEWAY PATCH (from P2AURAFARMER) ───
+# ─── GATEWAY PATCH ───
 from discord.state import ConnectionState
 def patched_parse_ready_supplemental(self, data):
     try:
@@ -20,11 +20,9 @@ def patched_parse_ready_supplemental(self, data):
 ConnectionState.parse_ready_supplemental = patched_parse_ready_supplemental
 
 # ─── CONFIG ───
-# Try environment variable first, fallback to hardcoded
 ACCOUNT_TOKEN = os.getenv("TOKEN1")
 if not ACCOUNT_TOKEN:
     ACCOUNT_TOKEN = "YOUR_HARDCODED_TOKEN_HERE"  # Replace with your token
-    logger.warning("⚠️ Using hardcoded token (environment variable not set)")
 
 SOURCE_SERVER_ID = 1443875856803168360
 TARGET_SERVER_ID = 1517588614459031723
@@ -47,7 +45,7 @@ def keep_alive():
 async def start_cloning_engine(client, source_guild, target_guild):
     logger.info(f"\n{'='*50}\n🚀 CLONING INITIALIZED\n📁 Source: {source_guild.name}\n🎯 Target: {target_guild.name}\n{'='*50}")
 
-    # ─── STEP 1: Purge ───
+    # STEP 1: Purge channels
     logger.info("🧹 [1/4] Clearing target channels...")
     if not DRY_RUN:
         for channel in target_guild.channels:
@@ -57,7 +55,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
             except Exception:
                 pass
 
-    # ─── STEP 2: Roles ───
+    # STEP 2: Roles
     logger.info("\n🎭 [2/4] Duplicating roles...")
     role_mapping = {}
     for role in sorted(source_guild.roles, key=lambda r: r.position, reverse=True):
@@ -85,7 +83,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
             except Exception as e:
                 logger.error(f"❌ Failed to create role {role.name}: {e}")
 
-    # ─── STEP 3: Categories & Channels ───
+    # STEP 3: Categories & Channels
     logger.info("\n📁 [3/4] Building categories and channels...")
     for category in source_guild.categories:
         cat_overwrites = {}
@@ -151,7 +149,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
                 except Exception:
                     pass
 
-    # ─── STEP 4: Emojis ───
+    # STEP 4: Emojis
     logger.info("\n👾 [4/4] Syncing emojis...")
     if source_guild.emojis:
         available = target_guild.emoji_limit - len(target_guild.emojis)
@@ -167,60 +165,52 @@ async def start_cloning_engine(client, source_guild, target_guild):
 
     logger.info("\n🎉 CLONING COMPLETED!")
 
-# ─── EVENT SETUP ───
-def setup_cloner_events(client):
+# ─── MAIN BOOT ───
+async def main():
+    keep_alive()
+    logger.info("🚀 SYSTEM BOOT: DIRECT CONNECTION MODE")
+
+    if not ACCOUNT_TOKEN or ACCOUNT_TOKEN == "YOUR_HARDCODED_TOKEN_HERE":
+        logger.error("❌ TOKEN1 not set!")
+        return
+
+    client = discord.Client(
+        self_bot=True,
+        browser="chrome",
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        compress=False
+    )
+
+    # Define on_ready (for logging, but we'll also use wait_until_ready)
     @client.event
     async def on_ready():
         logger.info(f"✨ Authenticated as: {client.user}")
-        
-        # Wait for guild cache to populate
-        logger.info("⏳ Waiting for guild cache...")
-        for attempt in range(1, 13):
-            await asyncio.sleep(5)
-            source = client.get_guild(SOURCE_SERVER_ID)
-            target = client.get_guild(TARGET_SERVER_ID)
-            logger.info(f"Attempt {attempt}/12 – Source: {source is not None}, Target: {target is not None}")
-            if source and target:
-                logger.info("✅ Both guilds found!")
-                await start_cloning_engine(client, source, target)
-                return
-        
-        logger.error("❌ Guilds not found after 60 seconds.")
-        logger.error(f"📋 Guilds in cache: {[g.id for g in client.guilds]}")
 
-# ─── MAIN BOOT (like P2AURAFARMER) ───
-async def main_boot():
-    keep_alive()
-    logger.info("🚀 SYSTEM BOOT: DIRECT CONNECTION MODE")
-    
-    if not ACCOUNT_TOKEN or ACCOUNT_TOKEN == "YOUR_HARDCODED_TOKEN_HERE":
-        logger.error("❌ TOKEN1 not set! Please hardcode your token or set environment variable.")
+    # Start the client (async)
+    await client.start(ACCOUNT_TOKEN.strip())
+
+    # Wait for client to be ready
+    await client.wait_until_ready()
+    logger.info("Client is ready!")
+
+    # Now find the guilds
+    source = client.get_guild(SOURCE_SERVER_ID)
+    target = client.get_guild(TARGET_SERVER_ID)
+
+    if not source:
+        logger.error(f"❌ Source server [{SOURCE_SERVER_ID}] not found.")
+        logger.error(f"📋 Guilds in cache: {[g.id for g in client.guilds]}")
+        return
+    if not target:
+        logger.error(f"❌ Target server [{TARGET_SERVER_ID}] not found.")
+        logger.error(f"📋 Guilds in cache: {[g.id for g in client.guilds]}")
         return
 
-    logger.info("✅ Token loaded")
-    
-    try:
-        client = discord.Client(
-            self_bot=True,
-            browser="chrome",
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            compress=False
-        )
-        
-        setup_cloner_events(client)
-        asyncio.create_task(client.start(ACCOUNT_TOKEN.strip()))
-        
-        logger.info("⏳ Waiting for client to connect...")
-        # Keep the bot running
-        while True:
-            await asyncio.sleep(3600)
-            
-    except Exception as e:
-        logger.error(f"🛑 Error booting: {e}")
+    await start_cloning_engine(client, source, target)
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main_boot())
+        asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Stopping Cloner...")
     except Exception as e:
