@@ -166,7 +166,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
     logger.info("\n🎉 CLONING COMPLETED!")
 
 # ─── MAIN BOOT ───
-async def main_boot():
+async def main():
     keep_alive()
     logger.info("🚀 SYSTEM BOOT: DIRECT CONNECTION MODE")
 
@@ -183,40 +183,41 @@ async def main_boot():
 
     @client.event
     async def on_ready():
-        logger.info(f"✨ [ON_READY] Authenticated as: {client.user}")
+        logger.info(f"✨ on_ready fired: {client.user}")
 
-    # Start client
-    await client.start(ACCOUNT_TOKEN.strip())
+    # Start client in background (same as P2AURAFARMER)
+    asyncio.create_task(client.start(ACCOUNT_TOKEN.strip()))
 
-    # Wait for the client to be ready (gateway connection established)
-    await client.wait_until_ready()
-    logger.info("✅ Client is ready.")
+    # Wait for client to authenticate
+    logger.info("⏳ Waiting for client to authenticate...")
+    while client.user is None:
+        await asyncio.sleep(0.5)
 
-    # Poll for guilds until they appear (max 30 attempts, 2s apart = 60s)
-    source = target = None
+    logger.info(f"✨ Authenticated as: {client.user}")
+
+    # Wait for guild cache
+    logger.info("⏳ Waiting for guild cache to populate...")
     for attempt in range(1, 31):
+        await asyncio.sleep(5)
         source = client.get_guild(SOURCE_SERVER_ID)
         target = client.get_guild(TARGET_SERVER_ID)
-        if source and target:
-            logger.info(f"✅ Found both guilds after {attempt*2}s.")
-            break
         logger.info(f"Attempt {attempt}/30 – Source: {source is not None}, Target: {target is not None}")
-        await asyncio.sleep(2)
-
-    if not source or not target:
+        if source and target:
+            logger.info("✅ Both guilds found!")
+            await start_cloning_engine(client, source, target)
+            break
+    else:
         logger.error("❌ Guilds not found after 60 seconds.")
         logger.error(f"📋 Guilds in cache: {[g.id for g in client.guilds]}")
-        return
 
-    await start_cloning_engine(client, source, target)
-
-    # Keep alive
+    # Keep the bot running (like P2AURAFARMER)
+    logger.info("🔄 Keeping bot alive...")
     while True:
         await asyncio.sleep(3600)
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main_boot())
+        asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Stopping Cloner...")
     except Exception as e:
