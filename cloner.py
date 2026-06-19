@@ -41,14 +41,17 @@ def run():
 def keep_alive():
     Thread(target=run, daemon=True).start()
 
-# ─── CLONING ENGINE (UPDATED) ───
+# ─── CLONING ENGINE (with fixed permission check) ───
 async def start_cloning_engine(client, source_guild, target_guild):
     logger.info(f"\n{'='*50}\n🚀 CLONING INITIALIZED\n📁 Source: {source_guild.name}\n🎯 Target: {target_guild.name}\n{'='*50}")
 
-    # Check permissions
-    me = target_guild.me
-    if not me.guild_permissions.manage_channels:
-        logger.error("❌ Bot does not have 'Manage Channels' permission in the target server.")
+    # ─── Check permissions (fixed for self‑bots) ───
+    self_member = target_guild.get_member(client.user.id)
+    if not self_member:
+        logger.error("❌ Could not find yourself in the target guild.")
+        return
+    if not self_member.guild_permissions.manage_channels:
+        logger.error("❌ Account does not have 'Manage Channels' permission in the target server.")
         return
 
     # ─── STEP 1: Purge channels ───
@@ -116,6 +119,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
         else:
             new_category = None
 
+        # Text channels in this category
         for txt_chan in sorted(category.text_channels, key=lambda c: c.position):
             chan_overwrites = {}
             for role_or_member, overwrite in txt_chan.overwrites.items():
@@ -139,6 +143,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
                 except Exception as e:
                     logger.error(f"  ├── ❌ Failed text channel {txt_chan.name}: {e}")
 
+        # Voice channels in this category
         for vc_chan in sorted(category.voice_channels, key=lambda c: c.position):
             chan_overwrites = {}
             for role_or_member, overwrite in vc_chan.overwrites.items():
