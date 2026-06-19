@@ -8,7 +8,7 @@ from flask import Flask
 from threading import Thread
 
 # ───────────────────────────────────────────────────────────────────
-# 🛠️ LOGGING CONFIG (forces all output to Render console)
+# 🛠️ LOGGING
 # ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger("ClonerEngine")
 
 # ───────────────────────────────────────────────────────────────────
-# 🔥 CRITICAL GATEWAY PATCH: FIXES 'NoneType' OBJECT IS NOT ITERABLE
+# 🔥 CRITICAL GATEWAY PATCH
 # ───────────────────────────────────────────────────────────────────
 from discord.state import ConnectionState
 
@@ -40,10 +40,7 @@ ACCOUNT_TOKEN = os.getenv("TOKEN1")
 SOURCE_SERVER_ID = 1443875856803168360  
 TARGET_SERVER_ID = 1517588614459031723   
 
-# Set to True for a trial run without making changes
 DRY_RUN = False
-
-# Concurrency limits (avoid rate limits)
 MAX_CONCURRENT_EMOJI_CREATIONS = 3
 # =======================================================================
 
@@ -62,9 +59,6 @@ def keep_alive():
     Thread(target=run, daemon=True).start()
 # ───────────────────────────────────────────────────────────────────
 
-# ───────────────────────────────────────────────────────────────────
-# BOT CLIENT (Self‑bot)
-# ───────────────────────────────────────────────────────────────────
 cloner_client = discord.Client(
     self_bot=True,
     browser="chrome",
@@ -73,47 +67,48 @@ cloner_client = discord.Client(
 )
 
 # ───────────────────────────────────────────────────────────────────
-# 🧠 HELPER: Progress bar (simple)
+# 🧠 HELPER PROGRESS
 # ───────────────────────────────────────────────────────────────────
 def print_progress(current, total, label="Progress"):
-    percent = (current / total) * 100 if total > 0 else 0
+    if total == 0:
+        logger.info(f"{label}: 0/0 (100%)")
+        return
+    percent = (current / total) * 100
     bar = "[" + "=" * int(percent // 5) + ">" + "." * (20 - int(percent // 5)) + "]"
     logger.info(f"{label}: {bar} {current}/{total} ({percent:.1f}%)")
 
 # ───────────────────────────────────────────────────────────────────
-# 🚀 MAIN CLONING ENGINE
+# 🚀 CLONING ENGINE
 # ───────────────────────────────────────────────────────────────────
 async def start_cloning_engine():
-    logger.info("⏳ Waiting for Discord cache to stabilise...")
-    await asyncio.sleep(5)
+    # Wait for cache to be filled
+    logger.info("⏳ Waiting for Discord cache to populate...")
+    await asyncio.sleep(8)
 
-    # Double‑check guild cache
     source_guild = cloner_client.get_guild(SOURCE_SERVER_ID)
     target_guild = cloner_client.get_guild(TARGET_SERVER_ID)
 
-    # If still missing, try a more aggressive cache warm‑up
-    if not source_guild or not target_guild:
-        logger.warning("Cache not fully populated – attempting a 30‑second warmup...")
-        for attempt in range(1, 7):
-            await asyncio.sleep(5)
-            source_guild = cloner_client.get_guild(SOURCE_SERVER_ID)
-            target_guild = cloner_client.get_guild(TARGET_SERVER_ID)
-            logger.info(f"Attempt {attempt}/6 – Source: {source_guild is not None}, Target: {target_guild is not None}")
-            if source_guild and target_guild:
-                break
+    # Retry up to 6 times (30 seconds total)
+    for attempt in range(1, 7):
+        if source_guild and target_guild:
+            break
+        await asyncio.sleep(5)
+        source_guild = cloner_client.get_guild(SOURCE_SERVER_ID)
+        target_guild = cloner_client.get_guild(TARGET_SERVER_ID)
+        logger.info(f"Attempt {attempt}/6 – Source: {source_guild is not None}, Target: {target_guild is not None}")
 
     if not source_guild:
-        logger.error(f"❌ Source server [{SOURCE_SERVER_ID}] not found. Is the account in it?")
+        logger.error(f"❌ Source server [{SOURCE_SERVER_ID}] not found. Account must be in it.")
         logger.error(f"📋 Guilds in cache: {[g.id for g in cloner_client.guilds]}")
         return
 
     if not target_guild:
-        logger.error(f"❌ Target server [{TARGET_SERVER_ID}] not found. Is the account in it?")
+        logger.error(f"❌ Target server [{TARGET_SERVER_ID}] not found. Account must be in it.")
         logger.error(f"📋 Guilds in cache: {[g.id for g in cloner_client.guilds]}")
         return
 
     if DRY_RUN:
-        logger.warning("⚠️ DRY RUN MODE – No changes will be made to the target server.")
+        logger.warning("⚠️ DRY RUN – No changes will be made.")
     else:
         logger.info("🔴 LIVE MODE – Changes will be applied.")
 
@@ -124,7 +119,7 @@ async def start_cloning_engine():
     logger.info("="*50 + "\n")
 
     # ───────────────────────────────────────────────────────────────
-    # STEP 1: Purge target channels (optional – you may skip by setting DRY_RUN)
+    # STEP 1: Purge target channels
     # ───────────────────────────────────────────────────────────────
     logger.info("🧹 [1/4] Clearing target server channels...")
     if not DRY_RUN:
@@ -139,12 +134,11 @@ async def start_cloning_engine():
         logger.info("ℹ️ DRY RUN – Skipping channel deletion.")
 
     # ───────────────────────────────────────────────────────────────
-    # STEP 2: Role cloning (synchronous but fast)
+    # STEP 2: Roles
     # ───────────────────────────────────────────────────────────────
     logger.info("\n🎭 [2/4] Duplicating roles...")
     role_mapping = {}
 
-    # Sort roles by position (highest first is safer)
     sorted_roles = sorted(source_guild.roles, key=lambda r: r.position, reverse=True)
 
     for role in sorted_roles:
@@ -181,17 +175,14 @@ async def start_cloning_engine():
             logger.info(f"ℹ️ DRY RUN – Would create role: {role.name}")
 
     # ───────────────────────────────────────────────────────────────
-    # STEP 3: Categories & Channels (with progress)
+    # STEP 3: Categories & Channels
     # ───────────────────────────────────────────────────────────────
     logger.info("\n📁 [3/4] Building categories and channels...")
     
-    total_channels = 0
-    for cat in source_guild.categories:
-        total_channels += len(cat.text_channels) + len(cat.voice_channels)
+    total_channels = sum(len(cat.text_channels) + len(cat.voice_channels) for cat in source_guild.categories)
     processed = 0
 
     for category in source_guild.categories:
-        # Build category permission overrides
         cat_overwrites = {}
         for role_or_member, overwrite in category.overwrites.items():
             if isinstance(role_or_member, discord.Role):
@@ -214,7 +205,7 @@ async def start_cloning_engine():
             logger.info(f"ℹ️ DRY RUN – Would create category: {category.name}")
             new_category = None
 
-        # Text channels (sorted by position)
+        # Text channels
         for txt_chan in sorted(category.text_channels, key=lambda c: c.position):
             chan_overwrites = {}
             for role_or_member, overwrite in txt_chan.overwrites.items():
@@ -243,7 +234,7 @@ async def start_cloning_engine():
             else:
                 logger.info(f"  ├── ℹ️ DRY RUN – Would create text: {txt_chan.name}")
 
-        # Voice channels (sorted by position)
+        # Voice channels
         for vc_chan in sorted(category.voice_channels, key=lambda c: c.position):
             chan_overwrites = {}
             for role_or_member, overwrite in vc_chan.overwrites.items():
@@ -273,7 +264,7 @@ async def start_cloning_engine():
             else:
                 logger.info(f"  ├── ℹ️ DRY RUN – Would create voice: {vc_chan.name}")
 
-    # Handle uncategorized channels (if any)
+    # Uncategorized channels
     for channel in source_guild.channels:
         if channel.category is None and not isinstance(channel, discord.CategoryChannel):
             if not DRY_RUN:
@@ -294,7 +285,7 @@ async def start_cloning_engine():
                 logger.info(f"ℹ️ DRY RUN – Would create uncategorized: {channel.name}")
 
     # ───────────────────────────────────────────────────────────────
-    # STEP 4: Emoji copying (with concurrency control)
+    # STEP 4: Emojis
     # ───────────────────────────────────────────────────────────────
     logger.info("\n👾 [4/4] Syncing custom emojis...")
     
@@ -306,10 +297,10 @@ async def start_cloning_engine():
         available = max_slots - used_slots
         logger.info(f"📊 Emoji slots: {used_slots}/{max_slots} used, {available} available.")
 
-        emojis_to_copy = source_guild.emojis[:available]  # only copy what fits
+        emojis_to_copy = source_guild.emojis[:available]
         total_emojis = len(emojis_to_copy)
         if total_emojis == 0:
-            logger.info("ℹ️ No emoji slots available or no emojis to copy.")
+            logger.info("ℹ️ No emoji slots available.")
         else:
             sem = asyncio.Semaphore(MAX_CONCURRENT_EMOJI_CREATIONS)
 
@@ -330,7 +321,6 @@ async def start_cloning_engine():
                             retry_after = getattr(e, 'retry_after', 5)
                             logger.warning(f"  ⏳ Rate limited on :{emoji.name}: waiting {retry_after}s")
                             await asyncio.sleep(retry_after)
-                            # Retry once
                             try:
                                 emoji_bytes = await emoji.read()
                                 await target_guild.create_custom_emoji(
@@ -353,10 +343,10 @@ async def start_cloning_engine():
             await asyncio.gather(*tasks)
 
     # ───────────────────────────────────────────────────────────────
-    # FINAL REPORT
+    # FINISH
     # ───────────────────────────────────────────────────────────────
     logger.info("\n" + "="*50)
-    logger.info("🎉 CLONING COMPLETED SUCCESSFULLY!")
+    logger.info("🎉 CLONING COMPLETED!")
     logger.info(f"📊 Channels processed: {processed}/{total_channels}")
     logger.info(f"🎭 Roles created: {len(role_mapping)}")
     logger.info(f"👾 Emojis attempted: {total_emojis}")
@@ -366,10 +356,10 @@ async def start_cloning_engine():
 # EVENT HANDLERS
 # ───────────────────────────────────────────────────────────────────
 @cloner_client.event
-async def on_ready():
-    logger.info(f"✨ Authenticated as: {cloner_client.user}")
-    logger.info(f"📡 Guilds in cache: {len(cloner_client.guilds)}")
-    # Start the cloning engine
+async def on_connect():
+    logger.info("✨ Connected to Discord gateway. Waiting for cache...")
+    # Start the cloning after a short delay to allow cache to fill
+    await asyncio.sleep(5)
     await start_cloning_engine()
 
 # ───────────────────────────────────────────────────────────────────
