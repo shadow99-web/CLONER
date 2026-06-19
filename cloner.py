@@ -25,7 +25,7 @@ if not ACCOUNT_TOKEN:
     ACCOUNT_TOKEN = "YOUR_HARDCODED_TOKEN_HERE"
 
 SOURCE_SERVER_ID = 1443875856803168360
-TARGET_SERVER_ID = 1517627991369449623
+TARGET_SERVER_ID = 1517635362862661763
 DRY_RUN = False
 
 # ─── FLASK KEEP-ALIVE ───
@@ -41,7 +41,7 @@ def run():
 def keep_alive():
     Thread(target=run, daemon=True).start()
 
-# ─── CLONING ENGINE (fixed permission check using fetch_member) ───
+# ─── CLONING ENGINE (fixed: fetch channels explicitly) ───
 async def start_cloning_engine(client, source_guild, target_guild):
     logger.info(f"\n{'='*50}\n🚀 CLONING INITIALIZED\n📁 Source: {source_guild.name}\n🎯 Target: {target_guild.name}\n{'='*50}")
 
@@ -100,10 +100,26 @@ async def start_cloning_engine(client, source_guild, target_guild):
 
     # ─── STEP 3: Categories & Channels ───
     logger.info("\n📁 [3/4] Building categories and channels...")
-    categories = source_guild.categories
-    logger.info(f"📊 Found {len(categories)} categories in source.")
 
-    for category in categories:
+    # ─── THE FIX: Fetch channels explicitly ───
+    logger.info("⏳ Fetching channels from source guild...")
+    try:
+        source_channels = await source_guild.fetch_channels()
+        logger.info(f"✅ Fetched {len(source_channels)} channels from source.")
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch channels: {e}")
+        return
+
+    # Separate categories and non-category channels
+    source_categories = [ch for ch in source_channels if isinstance(ch, discord.CategoryChannel)]
+    source_text_channels = [ch for ch in source_channels if isinstance(ch, discord.TextChannel)]
+    source_voice_channels = [ch for ch in source_channels if isinstance(ch, discord.VoiceChannel)]
+
+    logger.info(f"📊 Categories: {len(source_categories)}, Text: {len(source_text_channels)}, Voice: {len(source_voice_channels)}")
+
+    # ─── Create Categories ───
+    category_mapping = {}
+    for category in sorted(source_categories, key=lambda c: c.position):
         cat_overwrites = {}
         for role_or_member, overwrite in category.overwrites.items():
             if isinstance(role_or_member, discord.Role):
@@ -117,104 +133,64 @@ async def start_cloning_engine(client, source_guild, target_guild):
                     name=category.name,
                     overwrites=cat_overwrites
                 )
+                category_mapping[category.id] = new_category
                 logger.info(f"📂 Category: {category.name}")
                 await asyncio.sleep(0.5)
             except Exception as e:
                 logger.error(f"❌ Failed category {category.name}: {e}")
-                continue
-        else:
-            new_category = None
 
-        # Text channels in this category
-        for txt_chan in sorted(category.text_channels, key=lambda c: c.position):
-            chan_overwrites = {}
-            for role_or_member, overwrite in txt_chan.overwrites.items():
-                if isinstance(role_or_member, discord.Role):
-                    mapped_role = role_mapping.get(role_or_member.id)
-                    if mapped_role:
-                        chan_overwrites[mapped_role] = overwrite
-
-            if not DRY_RUN:
-                try:
-                    await target_guild.create_text_channel(
-                        name=txt_chan.name,
-                        category=new_category,
-                        topic=txt_chan.topic,
-                        nsfw=txt_chan.nsfw,
-                        slowmode_delay=txt_chan.slowmode_delay,
-                        overwrites=chan_overwrites
-                    )
-                    logger.info(f"  ├── 📝 Text: {txt_chan.name}")
-                    await asyncio.sleep(0.3)
-                except Exception as e:
-                    logger.error(f"  ├── ❌ Failed text channel {txt_chan.name}: {e}")
-
-        # Voice channels in this category
-        for vc_chan in sorted(category.voice_channels, key=lambda c: c.position):
-            chan_overwrites = {}
-            for role_or_member, overwrite in vc_chan.overwrites.items():
-                if isinstance(role_or_member, discord.Role):
-                    mapped_role = role_mapping.get(role_or_member.id)
-                    if mapped_role:
-                        chan_overwrites[mapped_role] = overwrite
-
-            if not DRY_RUN:
-                try:
-                    max_bitrate = target_guild.bitrate_limit
-                    bitrate = max(8000, min(vc_chan.bitrate, max_bitrate))
-                    await target_guild.create_voice_channel(
-                        name=vc_chan.name,
-                        category=new_category,
-                        user_limit=vc_chan.user_limit,
-                        bitrate=bitrate,
-                        overwrites=chan_overwrites
-                    )
-                    logger.info(f"  ├── 🔊 Voice: {vc_chan.name}")
-                    await asyncio.sleep(0.3)
-                except Exception as e:
-                    logger.error(f"  ├── ❌ Failed voice channel {vc_chan.name}: {e}")
-
-    # ─── Handle uncategorized channels ───
-    uncategorized = [ch for ch in source_guild.channels if ch.category is None and not isinstance(ch, discord.CategoryChannel)]
-    logger.info(f"📊 Found {len(uncategorized)} uncategorized channels.")
-
-    for channel in uncategorized:
+    # ─── Create Text Channels ───
+    for txt_chan in sorted(source_text_channels, key=lambda c: c.position):
         chan_overwrites = {}
-        for role_or_member, overwrite in channel.overwrites.items():
+        for role_or_member, overwrite in txt_chan.overwrites.items():
             if isinstance(role_or_member, discord.Role):
                 mapped_role = role_mapping.get(role_or_member.id)
                 if mapped_role:
                     chan_overwrites[mapped_role] = overwrite
 
-        if isinstance(channel, discord.TextChannel):
-            if not DRY_RUN:
-                try:
-                    await target_guild.create_text_channel(
-                        name=channel.name,
-                        topic=channel.topic,
-                        nsfw=channel.nsfw,
-                        slowmode_delay=channel.slowmode_delay,
-                        overwrites=chan_overwrites
-                    )
-                    logger.info(f"📝 Uncategorized Text: {channel.name}")
-                    await asyncio.sleep(0.3)
-                except Exception as e:
-                    logger.error(f"❌ Failed uncategorized text channel {channel.name}: {e}")
-        elif isinstance(channel, discord.VoiceChannel):
-            if not DRY_RUN:
-                try:
-                    max_bitrate = target_guild.bitrate_limit
-                    bitrate = max(8000, min(channel.bitrate, max_bitrate))
-                    await target_guild.create_voice_channel(
-                        name=channel.name,
-                        user_limit=channel.user_limit,
-                        bitrate=bitrate,
-                        overwrites=chan_overwrites
-                    )
-                    logger.info(f"🔊 Uncategorized Voice: {channel.name}")
-                    await asyncio.sleep(0.3)
-                except Exception as e:
-                    logger.error(f"❌ Failed uncategorized voice channel {channel.name}: {e}")
+        parent_category = category_mapping.get(txt_chan.category_id) if txt_chan.category_id else None
+
+        if not DRY_RUN:
+            try:
+                await target_guild.create_text_channel(
+                    name=txt_chan.name,
+                    category=parent_category,
+                    topic=txt_chan.topic,
+                    nsfw=txt_chan.nsfw,
+                    slowmode_delay=txt_chan.slowmode_delay,
+                    overwrites=chan_overwrites
+                )
+                logger.info(f"  ├── 📝 Text: {txt_chan.name}")
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                logger.error(f"  ├── ❌ Failed text channel {txt_chan.name}: {e}")
+
+    # ─── Create Voice Channels ───
+    for vc_chan in sorted(source_voice_channels, key=lambda c: c.position):
+        chan_overwrites = {}
+        for role_or_member, overwrite in vc_chan.overwrites.items():
+            if isinstance(role_or_member, discord.Role):
+                mapped_role = role_mapping.get(role_or_member.id)
+                if mapped_role:
+                    chan_overwrites[mapped_role] = overwrite
+
+        parent_category = category_mapping.get(vc_chan.category_id) if vc_chan.category_id else None
+
+        if not DRY_RUN:
+            try:
+                max_bitrate = target_guild.bitrate_limit
+                bitrate = max(8000, min(vc_chan.bitrate, max_bitrate))
+                await target_guild.create_voice_channel(
+                    name=vc_chan.name,
+                    category=parent_category,
+                    user_limit=vc_chan.user_limit,
+                    bitrate=bitrate,
+                    overwrites=chan_overwrites
+                )
+                logger.info(f"  ├── 🔊 Voice: {vc_chan.name}")
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                logger.error(f"  ├── ❌ Failed voice channel {vc_chan.name}: {e}")
 
     # ─── STEP 4: Emojis ───
     logger.info("\n👾 [4/4] Syncing emojis...")
@@ -251,8 +227,8 @@ async def start_cloning_engine(client, source_guild, target_guild):
     logger.info("\n" + "="*50)
     logger.info("🎉 CLONING COMPLETED SUCCESSFULLY!")
     logger.info(f"📊 Roles created: {len(role_mapping)}")
+    logger.info(f"📊 Categories created: {len(category_mapping)}")
     logger.info("="*50 + "\n")
-
 # ─── MAIN BOOT ───
 async def main_boot():
     keep_alive()
