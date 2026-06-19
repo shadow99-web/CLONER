@@ -41,9 +41,15 @@ def run():
 def keep_alive():
     Thread(target=run, daemon=True).start()
 
-# ─── CLONING ENGINE ───
+# ─── CLONING ENGINE (UPDATED) ───
 async def start_cloning_engine(client, source_guild, target_guild):
     logger.info(f"\n{'='*50}\n🚀 CLONING INITIALIZED\n📁 Source: {source_guild.name}\n🎯 Target: {target_guild.name}\n{'='*50}")
+
+    # Check permissions
+    me = target_guild.me
+    if not me.guild_permissions.manage_channels:
+        logger.error("❌ Bot does not have 'Manage Channels' permission in the target server.")
+        return
 
     # ─── STEP 1: Purge channels ───
     logger.info("🧹 [1/4] Clearing target channels...")
@@ -85,7 +91,10 @@ async def start_cloning_engine(client, source_guild, target_guild):
 
     # ─── STEP 3: Categories & Channels ───
     logger.info("\n📁 [3/4] Building categories and channels...")
-    for category in source_guild.categories:
+    categories = source_guild.categories
+    logger.info(f"📊 Found {len(categories)} categories in source.")
+
+    for category in categories:
         cat_overwrites = {}
         for role_or_member, overwrite in category.overwrites.items():
             if isinstance(role_or_member, discord.Role):
@@ -154,6 +163,48 @@ async def start_cloning_engine(client, source_guild, target_guild):
                 except Exception as e:
                     logger.error(f"  ├── ❌ Failed voice channel {vc_chan.name}: {e}")
 
+    # ─── Handle uncategorized channels ───
+    uncategorized = [ch for ch in source_guild.channels if ch.category is None and not isinstance(ch, discord.CategoryChannel)]
+    logger.info(f"📊 Found {len(uncategorized)} uncategorized channels.")
+
+    for channel in uncategorized:
+        chan_overwrites = {}
+        for role_or_member, overwrite in channel.overwrites.items():
+            if isinstance(role_or_member, discord.Role):
+                mapped_role = role_mapping.get(role_or_member.id)
+                if mapped_role:
+                    chan_overwrites[mapped_role] = overwrite
+
+        if isinstance(channel, discord.TextChannel):
+            if not DRY_RUN:
+                try:
+                    await target_guild.create_text_channel(
+                        name=channel.name,
+                        topic=channel.topic,
+                        nsfw=channel.nsfw,
+                        slowmode_delay=channel.slowmode_delay,
+                        overwrites=chan_overwrites
+                    )
+                    logger.info(f"📝 Uncategorized Text: {channel.name}")
+                    await asyncio.sleep(0.3)
+                except Exception as e:
+                    logger.error(f"❌ Failed uncategorized text channel {channel.name}: {e}")
+        elif isinstance(channel, discord.VoiceChannel):
+            if not DRY_RUN:
+                try:
+                    max_bitrate = target_guild.bitrate_limit
+                    bitrate = max(8000, min(channel.bitrate, max_bitrate))
+                    await target_guild.create_voice_channel(
+                        name=channel.name,
+                        user_limit=channel.user_limit,
+                        bitrate=bitrate,
+                        overwrites=chan_overwrites
+                    )
+                    logger.info(f"🔊 Uncategorized Voice: {channel.name}")
+                    await asyncio.sleep(0.3)
+                except Exception as e:
+                    logger.error(f"❌ Failed uncategorized voice channel {channel.name}: {e}")
+
     # ─── STEP 4: Emojis ───
     logger.info("\n👾 [4/4] Syncing emojis...")
     if source_guild.emojis:
@@ -213,14 +264,17 @@ async def main_boot():
 
     asyncio.create_task(client.start(ACCOUNT_TOKEN.strip()))
 
-    logger.info("⏳ Waiting for client to authenticate...")
-    while client.user is None:
-        await asyncio.sleep(0.5)
+    # Wait for the client to be ready (with timeout)
+    logger.info("⏳ Waiting for client to be ready...")
+    try:
+        await asyncio.wait_for(client.wait_until_ready(), timeout=30)
+        logger.info("✅ Client is ready!")
+    except asyncio.TimeoutError:
+        logger.error("❌ Client did not become ready within 30 seconds. Exiting.")
+        return
 
-    logger.info(f"✨ Authenticated as: {client.user}")
-
-    logger.info("⏳ Waiting 10s for connection to stabilize...")
-    await asyncio.sleep(10)
+    # Wait a bit for guild cache to populate (not strictly needed since we use fetch, but helpful)
+    await asyncio.sleep(3)
 
     logger.info("⏳ Fetching guilds directly from Discord API...")
     try:
