@@ -195,6 +195,10 @@ async def main():
 
     logger.info(f"✨ Authenticated as: {client.user}")
 
+    # Wait additional 15 seconds for gateway to populate guilds
+    logger.info("⏳ Waiting 15s for guild cache to populate...")
+    await asyncio.sleep(15)
+
     # Wait for guild cache
     logger.info("⏳ Waiting for guild cache to populate...")
     for attempt in range(1, 31):
