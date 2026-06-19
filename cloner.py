@@ -10,10 +10,10 @@ import sys
 ACCOUNT_TOKEN = os.getenv("TOKEN1") 
 
 # The server ID you want to copy (where you are a member)
-SOURCE_SERVER_ID = 111111111111111111  
+SOURCE_SERVER_ID = 1443875856803168360  
 
 # Your empty destination server ID (where you have Admin/Owner control)
-TARGET_SERVER_ID = 222222222222222222  
+TARGET_SERVER_ID = 1517588614459031723   
 # =======================================================================
 
 cloner_client = discord.Client(
@@ -36,7 +36,7 @@ async def start_cloning_engine():
         return
 
     print("\n" + "="*50)
-    print(f"🚀 CLONING INITIALIZED")
+    print(f"🚀 DEEP CLONING AND EMOJI SYNC INITIALIZED")
     print(f"📁 Source Guild: {source_guild.name}")
     print(f"🎯 Target Guild: {target_guild.name}")
     print("="*50 + "\n")
@@ -44,7 +44,7 @@ async def start_cloning_engine():
     # ───────────────────────────────────────────────────────────────────
     # STEP 1: CLEANING INTERFACE LAYER
     # ───────────────────────────────────────────────────────────────────
-    print("🧹 [1/3] Purging default channels from target server...")
+    print("🧹 [1/4] Purging default channels from target server...")
     for channel in target_guild.channels:
         try:
             await channel.delete()
@@ -55,7 +55,7 @@ async def start_cloning_engine():
     # ───────────────────────────────────────────────────────────────────
     # STEP 2: REBUILDING THE ROLE MAP MATRIX
     # ───────────────────────────────────────────────────────────────────
-    print("\n🎭 [2/3] Extracting and deploying global role permissions...")
+    print("\n🎭 [2/4] Extracting and deploying global role permissions...")
     role_mapping = {}  # Old Role ID -> New Role Object
 
     # Sort roles from lowest to highest hierarchy order to avoid position conflicts
@@ -63,7 +63,6 @@ async def start_cloning_engine():
 
     for role in sorted_roles:
         if role.is_default():
-            # Adjust the baseline @everyone permission matrix
             try:
                 await target_guild.default_role.edit(permissions=role.permissions)
                 role_mapping[role.id] = target_guild.default_role
@@ -72,7 +71,6 @@ async def start_cloning_engine():
                 print(f" ⚠️ Failed syncing @everyone perms: {e}")
             continue
 
-        # Skip integration roles handled by bots automatically
         if role.managed:
             continue
 
@@ -93,10 +91,9 @@ async def start_cloning_engine():
     # ───────────────────────────────────────────────────────────────────
     # STEP 3: MAPPING STRUCTURAL CATEGORIES & CHANNELS
     # ───────────────────────────────────────────────────────────────────
-    print("\n📁 [3/3] Engineering layout structures and local permission overrides...")
+    print("\n📁 [3/4] Engineering layout structures and local permission overrides...")
 
     for category in source_guild.categories:
-        # Re-index category overwrites targeting your newly deployed roles
         cat_overwrites = {}
         for role_or_member, overwrite in category.overwrites.items():
             if isinstance(role_or_member, discord.Role):
@@ -107,6 +104,114 @@ async def start_cloning_engine():
         try:
             new_category = await target_guild.create_category(
                 name=category.name,
+                overwrites=cat_overwrites
+            )
+            print(f"📂 Category Built: {category.name}")
+            await asyncio.sleep(1.0)
+        except Exception as e:
+            print(f" ❌ Skipping Category [{category.name}] due to failure: {e}")
+            continue
+
+        for txt_chan in category.text_channels:
+            chan_overwrites = {}
+            for role_or_member, overwrite in txt_chan.overwrites.items():
+                if isinstance(role_or_member, discord.Role):
+                    mapped_role = role_mapping.get(role_or_member.id)
+                    if mapped_role:
+                        chan_overwrites[mapped_role] = overwrite
+
+            try:
+                await target_guild.create_text_channel(
+                    name=txt_chan.name,
+                    category=new_category,
+                    topic=txt_chan.topic,
+                    nsfw=txt_chan.nsfw,
+                    slowmode_delay=txt_chan.slowmode_delay,
+                    overwrites=chan_overwrites
+                )
+                print(f"  ├── 📝 Text Channel: {txt_chan.name}")
+                await asyncio.sleep(1.2)  
+            except Exception as e:
+                print(f"  ├── ⚠️ Skipped Text Channel [{txt_chan.name}]: {e}")
+
+        for vc_chan in category.voice_channels:
+            chan_overwrites = {}
+            for role_or_member, overwrite in vc_chan.overwrites.items():
+                if isinstance(role_or_member, discord.Role):
+                    mapped_role = role_mapping.get(role_or_member.id)
+                    if mapped_role:
+                        chan_overwrites[mapped_role] = overwrite
+
+            try:
+                await target_guild.create_voice_channel(
+                    name=vc_chan.name,
+                    category=new_category,
+                    user_limit=vc_chan.user_limit,
+                    bitrate=max(8000, min(vc_chan.bitrate, 96000)),
+                    overwrites=chan_overwrites
+                )
+                print(f"  ├── 🔊 Voice Channel: {vc_chan.name}")
+                await asyncio.sleep(1.2)
+            except Exception as e:
+                print(f"  ├── ⚠️ Skipped Voice Channel [{vc_chan.name}]: {e}")
+
+    # ───────────────────────────────────────────────────────────────────
+    # STEP 4: DOWNLOADING & UPLOADING EMOTES PIPELINE
+    # ───────────────────────────────────────────────────────────────────
+    print("\n👾 [4/4] Extracting and importing server expressions (emojis)...")
+    
+    if not source_guild.emojis:
+        print(" ℹ️ No custom emojis discovered on the source server.")
+    else:
+        # Check current tier layout capabilities of destination guild
+        max_emojis = target_guild.emoji_limit
+        current_emojis = len(target_guild.emojis)
+        slots_available = max_emojis - current_emojis
+        
+        print(f" ℹ️ Target server emoji space capacity: {current_emojis}/{max_emojis} slots occupied.")
+        
+        emoji_count = 0
+        for emoji in source_guild.emojis:
+            if emoji_count >= slots_available:
+                print(" ⚠️ Reached maximum emoji capacity slots available on your target server tier! Stopping.")
+                break
+                
+            try:
+                # Read the asset's binary payload data
+                emoji_bytes = await emoji.read()
+                
+                # Re-upload asset stream onto your destination dashboard
+                await target_guild.create_custom_emoji(
+                    name=emoji.name,
+                    image=emoji_bytes
+                )
+                emoji_count += 1
+                print(f"  ├── ✨ Synced Emoji: :{emoji.name}: ({emoji_count})")
+                
+                # Emojis hit harsh rate limits. Pause to keep account profile operations safe.
+                await asyncio.sleep(2.0)
+            except Exception as e:
+                print(f"  ├── ⚠️ Failed to mirror emoji :{emoji.name}: -> {e}")
+                await asyncio.sleep(1.5)
+
+    print("\n" + "="*50)
+    print("🎉 DEPLOYMENT SUCCESSFUL! Structural layout and emoji banks mirrored completely.")
+    print("="*50 + "\n")
+    await cloner_client.close()
+
+@cloner_client.event
+async def on_ready():
+    print(f"✨ Authenticated successfully as: {cloner_client.user}")
+    cloner_client.loop.create_task(start_cloning_engine())
+
+if __name__ == "__main__":
+    if not ACCOUNT_TOKEN or ACCOUNT_TOKEN == "None":
+        print("❌ Error: ACCOUNT_TOKEN variable is completely empty inside cloner.py!")
+        sys.exit()
+    try:
+        cloner_client.run(ACCOUNT_TOKEN)
+    except Exception as e:
+        print(f"🛑 Execution Terminated: {e}")
                 overwrites=cat_overwrites
             )
             print(f"📂 Category Built: {category.name}")
