@@ -22,10 +22,10 @@ ConnectionState.parse_ready_supplemental = patched_parse_ready_supplemental
 # ─── CONFIG ───
 ACCOUNT_TOKEN = os.getenv("TOKEN1")
 if not ACCOUNT_TOKEN:
-    ACCOUNT_TOKEN = "YOUR_HARDCODED_TOKEN_HERE"  # Replace with your token
+    ACCOUNT_TOKEN = "YOUR_HARDCODED_TOKEN_HERE"
 
 SOURCE_SERVER_ID = 1443875856803168360
-TARGET_SERVER_ID = 1517588614459031723
+TARGET_SERVER_ID = 1517625015195926629
 DRY_RUN = False
 
 # ─── FLASK KEEP-ALIVE ───
@@ -45,7 +45,7 @@ def keep_alive():
 async def start_cloning_engine(client, source_guild, target_guild):
     logger.info(f"\n{'='*50}\n🚀 CLONING INITIALIZED\n📁 Source: {source_guild.name}\n🎯 Target: {target_guild.name}\n{'='*50}")
 
-    # STEP 1: Purge channels
+    # ─── STEP 1: Purge channels ───
     logger.info("🧹 [1/4] Clearing target channels...")
     if not DRY_RUN:
         for channel in target_guild.channels:
@@ -55,7 +55,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
             except Exception:
                 pass
 
-    # STEP 2: Roles
+    # ─── STEP 2: Roles ───
     logger.info("\n🎭 [2/4] Duplicating roles...")
     role_mapping = {}
     for role in sorted(source_guild.roles, key=lambda r: r.position, reverse=True):
@@ -83,7 +83,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
             except Exception as e:
                 logger.error(f"❌ Failed to create role {role.name}: {e}")
 
-    # STEP 3: Categories & Channels
+    # ─── STEP 3: Categories & Channels ───
     logger.info("\n📁 [3/4] Building categories and channels...")
     for category in source_guild.categories:
         cat_overwrites = {}
@@ -95,7 +95,10 @@ async def start_cloning_engine(client, source_guild, target_guild):
 
         if not DRY_RUN:
             try:
-                new_category = await target_guild.create_category(name=category.name, overwrites=cat_overwrites)
+                new_category = await target_guild.create_category(
+                    name=category.name,
+                    overwrites=cat_overwrites
+                )
                 logger.info(f"📂 Category: {category.name}")
                 await asyncio.sleep(0.5)
             except Exception as e:
@@ -111,6 +114,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
                     mapped_role = role_mapping.get(role_or_member.id)
                     if mapped_role:
                         chan_overwrites[mapped_role] = overwrite
+
             if not DRY_RUN:
                 try:
                     await target_guild.create_text_channel(
@@ -123,8 +127,8 @@ async def start_cloning_engine(client, source_guild, target_guild):
                     )
                     logger.info(f"  ├── 📝 Text: {txt_chan.name}")
                     await asyncio.sleep(0.3)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"  ├── ❌ Failed text channel {txt_chan.name}: {e}")
 
         for vc_chan in sorted(category.voice_channels, key=lambda c: c.position):
             chan_overwrites = {}
@@ -133,6 +137,7 @@ async def start_cloning_engine(client, source_guild, target_guild):
                     mapped_role = role_mapping.get(role_or_member.id)
                     if mapped_role:
                         chan_overwrites[mapped_role] = overwrite
+
             if not DRY_RUN:
                 try:
                     max_bitrate = target_guild.bitrate_limit
@@ -146,24 +151,45 @@ async def start_cloning_engine(client, source_guild, target_guild):
                     )
                     logger.info(f"  ├── 🔊 Voice: {vc_chan.name}")
                     await asyncio.sleep(0.3)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"  ├── ❌ Failed voice channel {vc_chan.name}: {e}")
 
-    # STEP 4: Emojis
+    # ─── STEP 4: Emojis ───
     logger.info("\n👾 [4/4] Syncing emojis...")
     if source_guild.emojis:
         available = target_guild.emoji_limit - len(target_guild.emojis)
-        for i, emoji in enumerate(source_guild.emojis[:available]):
+        emojis_to_copy = source_guild.emojis[:available]
+        logger.info(f"📊 Copying {len(emojis_to_copy)} emojis...")
+        for i, emoji in enumerate(emojis_to_copy):
             if not DRY_RUN:
                 try:
                     emoji_bytes = await emoji.read()
-                    await target_guild.create_custom_emoji(name=emoji.name, image=emoji_bytes)
-                    logger.info(f"  ✅ Copied emoji :{emoji.name}:")
+                    await target_guild.create_custom_emoji(
+                        name=emoji.name,
+                        image=emoji_bytes
+                    )
+                    logger.info(f"  ✅ Copied emoji :{emoji.name}: ({i+1}/{len(emojis_to_copy)})")
                     await asyncio.sleep(1.0)
+                except discord.HTTPException as e:
+                    if e.status == 429:
+                        retry_after = getattr(e, 'retry_after', 5)
+                        logger.warning(f"  ⏳ Rate limited on :{emoji.name}: waiting {retry_after}s")
+                        await asyncio.sleep(retry_after)
+                        try:
+                            emoji_bytes = await emoji.read()
+                            await target_guild.create_custom_emoji(name=emoji.name, image=emoji_bytes)
+                            logger.info(f"  ✅ Retry succeeded :{emoji.name}:")
+                        except Exception as e2:
+                            logger.error(f"  ❌ Failed to copy emoji :{emoji.name}: {e2}")
+                    else:
+                        logger.error(f"  ❌ Failed to copy emoji :{emoji.name}: {e}")
                 except Exception as e:
-                    logger.error(f"  ❌ Failed emoji :{emoji.name}: {e}")
+                    logger.error(f"  ❌ Failed to copy emoji :{emoji.name}: {e}")
 
-    logger.info("\n🎉 CLONING COMPLETED!")
+    logger.info("\n" + "="*50)
+    logger.info("🎉 CLONING COMPLETED SUCCESSFULLY!")
+    logger.info(f"📊 Roles created: {len(role_mapping)}")
+    logger.info("="*50 + "\n")
 
 # ─── MAIN BOOT ───
 async def main_boot():
@@ -185,21 +211,17 @@ async def main_boot():
     async def on_ready():
         logger.info(f"✨ [ON_READY] Authenticated as: {client.user}")
 
-    # Start client in background
     asyncio.create_task(client.start(ACCOUNT_TOKEN.strip()))
 
-    # Wait for authentication
     logger.info("⏳ Waiting for client to authenticate...")
     while client.user is None:
         await asyncio.sleep(0.5)
 
     logger.info(f"✨ Authenticated as: {client.user}")
 
-    # Wait for the connection to stabilize
     logger.info("⏳ Waiting 10s for connection to stabilize...")
     await asyncio.sleep(10)
 
-    # --- THE FIX: Use fetch_guild instead of get_guild ---
     logger.info("⏳ Fetching guilds directly from Discord API...")
     try:
         source_guild, target_guild = await asyncio.gather(
@@ -217,7 +239,6 @@ async def main_boot():
     except Exception as e:
         logger.error(f"❌ Error fetching guilds: {e}")
 
-    # Keep alive
     while True:
         await asyncio.sleep(3600)
 
