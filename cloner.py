@@ -41,18 +41,24 @@ def run():
 def keep_alive():
     Thread(target=run, daemon=True).start()
 
-# ─── CLONING ENGINE (with fixed permission check) ───
+# ─── CLONING ENGINE (fixed permission check using fetch_member) ───
 async def start_cloning_engine(client, source_guild, target_guild):
     logger.info(f"\n{'='*50}\n🚀 CLONING INITIALIZED\n📁 Source: {source_guild.name}\n🎯 Target: {target_guild.name}\n{'='*50}")
 
-    # ─── Check permissions (fixed for self‑bots) ───
-    self_member = target_guild.get_member(client.user.id)
-    if not self_member:
+    # ─── Check permissions using fetch_member ───
+    try:
+        self_member = await target_guild.fetch_member(client.user.id)
+    except discord.NotFound:
         logger.error("❌ Could not find yourself in the target guild.")
         return
+    except discord.Forbidden:
+        logger.error("❌ Bot does not have permission to view members in the target guild.")
+        return
+
     if not self_member.guild_permissions.manage_channels:
         logger.error("❌ Account does not have 'Manage Channels' permission in the target server.")
         return
+    logger.info("✅ Permission check passed.")
 
     # ─── STEP 1: Purge channels ───
     logger.info("🧹 [1/4] Clearing target channels...")
