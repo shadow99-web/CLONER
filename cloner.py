@@ -276,7 +276,8 @@ async def start_cloning_engine(client, source_guild, target_guild, dry_run=False
 
 # ─── COMMAND HANDLER ───
 async def handle_commands(message):
-    # Only process commands in the designated channel
+    global config  # <-- Move this to the top
+    
     if message.channel.id != COMMAND_CHANNEL_ID:
         return
     
@@ -314,8 +315,8 @@ async def handle_commands(message):
         return
 
     if cmd == '.pullconfig':
-        global config
-        config = load_config()
+        config.clear()
+        config.update(load_config())
         await message.channel.send("✅ Config reloaded from Hugging Face.")
         return
 
