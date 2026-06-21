@@ -115,6 +115,7 @@ async def start_cloning_engine(client, source_guild, target_guild, dry_run=False
         return
     logger.info("✅ Permission check passed.")
 
+    # ─── STEP 1: Purge channels ───
     logger.info("🧹 [1/4] Clearing target channels...")
     if not dry_run:
         for channel in target_guild.channels:
@@ -124,6 +125,38 @@ async def start_cloning_engine(client, source_guild, target_guild, dry_run=False
             except Exception:
                 pass
 
+    # ─── STEP 1.5: Purge existing roles ───
+    logger.info("🧹 [1.5/4] Purging existing roles (excluding @everyone and managed)...")
+    if not dry_run:
+        for role in target_guild.roles:
+            if role.is_default():
+                continue
+            if role.managed:
+                logger.info(f"  ⏩ Skipping managed role: {role.name}")
+                continue
+            try:
+                await role.delete()
+                logger.info(f"  🗑️ Deleted role: {role.name}")
+                await asyncio.sleep(0.3)
+            except discord.Forbidden:
+                logger.warning(f"  ⚠️ Missing permissions to delete role: {role.name}")
+            except Exception as e:
+                logger.warning(f"  ⚠️ Could not delete role {role.name}: {e}")
+
+    # ─── STEP 1.6: Purge existing emojis ───
+    logger.info("🧹 [1.6/4] Purging existing custom emojis...")
+    if not dry_run:
+        for emoji in target_guild.emojis:
+            try:
+                await emoji.delete()
+                logger.info(f"  🗑️ Deleted emoji: :{emoji.name}:")
+                await asyncio.sleep(0.5)
+            except discord.Forbidden:
+                logger.warning(f"  ⚠️ Missing permissions to delete emoji: {emoji.name}")
+            except Exception as e:
+                logger.warning(f"  ⚠️ Could not delete emoji :{emoji.name}: {e}")
+
+    # ─── STEP 2: Roles ───
     logger.info("\n🎭 [2/4] Duplicating roles...")
     role_mapping = {}
     for role in sorted(source_guild.roles, key=lambda r: r.position, reverse=True):
@@ -151,6 +184,7 @@ async def start_cloning_engine(client, source_guild, target_guild, dry_run=False
             except Exception as e:
                 logger.error(f"❌ Failed to create role {role.name}: {e}")
 
+    # ─── STEP 3: Categories & Channels ───
     logger.info("\n📁 [3/4] Building categories and channels...")
     try:
         source_channels = await source_guild.fetch_channels()
@@ -237,6 +271,7 @@ async def start_cloning_engine(client, source_guild, target_guild, dry_run=False
             except Exception as e:
                 logger.error(f"  ├── ❌ Failed voice channel {vc_chan.name}: {e}")
 
+    # ─── STEP 4: Emojis ───
     logger.info("\n👾 [4/4] Syncing emojis...")
     if source_guild.emojis:
         available = target_guild.emoji_limit - len(target_guild.emojis)
